@@ -1,0 +1,9 @@
+{
+  "name":"Trading Analyzer V19",
+  "short_name":"Trading Analyzer",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#06070b",
+  "theme_color":"#06070b",
+  "lang":"pt-PT"
+}
