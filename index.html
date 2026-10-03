@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#06070b">
   <meta name="description" content="Trading Analyzer — análise técnica em tempo real.">
   <link rel="manifest" href="manifest.webmanifest">
-  <title>Trading Analyzer V20.1 PRO</title>
+  <title>Trading Analyzer V20.2 PRO</title>
   <style>
     :root{
       --bg:#06070b;--panel:#0d1017;--panel2:#10141d;--line:#1d2430;--text:#f4f7fb;--muted:#8e99aa;
@@ -42,7 +42,7 @@
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><div class="logo">TA</div><div><h1>Trading Analyzer <span style="color:#7283a4">V19.1</span></h1><p>Day trading • análise técnica em tempo real</p></div></div>
+    <div class="brand"><div class="logo">TA</div><div><h1>Trading Analyzer <span style="color:#7283a4">V20.2 PRO</span></h1><p>Day trading • análise técnica em tempo real</p></div></div>
     <div class="live"><span class="dot"></span><span id="status">Tempo real ativo</span></div>
   </header>
 
@@ -204,24 +204,37 @@ function renderPatterns(cs,current){
 }
 function renderInterpretation(now,up,down,rr,p,support,resistance,confidence){let text='Mercado em análise, sem direção suficientemente clara.'; if(now==='COMPRA')text=`Forte confluência compradora: tendência ${up?'de alta':''} com indicadores alinhados. Preço ${fmt(p)}; suporte ${fmt(support)} e resistência ${fmt(resistance)}.`; else if(now==='VENDA')text=`Forte pressão vendedora: tendência ${down?'de baixa':''} com indicadores alinhados. RSI ${rr.toFixed(0)}; resistência ${fmt(resistance)} e suporte ${fmt(support)}.`; else if(up)text='Viés comprador presente, mas ainda falta diferença suficiente entre as forças para confirmar uma entrada imediata.'; else if(down)text='Viés vendedor presente, mas ainda falta diferença suficiente entre as forças para confirmar uma entrada imediata.'; $('interpretation').textContent=text; setEntryNote('interpretNote',now==='COMPRA'?'buy':now==='VENDA'?'sell':'wait',now==='COMPRA'?'Entrada recomendada apenas enquanto a confluência se mantiver.':now==='VENDA'?'Entrada de venda apenas enquanto a pressão se mantiver.':'Aguardar confirmação adicional antes de operar.');}
 
-const DATA_ENDPOINTS=['https://data-api.binance.vision/api/v3/klines','https://api.binance.com/api/v3/klines','https://api1.binance.com/api/v3/klines','https://api2.binance.com/api/v3/klines','https://api3.binance.com/api/v3/klines','https://api4.binance.com/api/v3/klines'];
+const DATA_ENDPOINTS=[
+  '/api/klines',
+  'https://data-api.binance.vision/api/v3/klines',
+  'https://data-api.binance.vision/api/v3/uiKlines',
+  'https://api.binance.com/api/v3/klines',
+  'https://api1.binance.com/api/v3/klines',
+  'https://api2.binance.com/api/v3/klines',
+  'https://api3.binance.com/api/v3/klines',
+  'https://api4.binance.com/api/v3/klines'
+];
 async function fetchKlines(limit=240){
-  let lastErr=null;
+  let lastErr=null, errors=[];
   for(const base of DATA_ENDPOINTS){
-    const ctl=new AbortController(); const timerId=setTimeout(()=>ctl.abort(),7000);
+    const ctl=new AbortController(); const timerId=setTimeout(()=>ctl.abort(),10000);
     try{
       const u=`${base}?symbol=${encodeURIComponent(symbolEl.value)}&interval=${encodeURIComponent(tfEl.value)}&limit=${limit}`;
-      const r=await fetch(u,{cache:'no-store',signal:ctl.signal,headers:{'Accept':'application/json'}});
+      const r=await fetch(u,{cache:'no-store',signal:ctl.signal,headers:{'Accept':'application/json','Cache-Control':'no-cache'}});
       clearTimeout(timerId);
-      if(!r.ok){lastErr=new Error(`HTTP ${r.status}`);continue;}
+      if(!r.ok){lastErr=new Error(`HTTP ${r.status}`);errors.push(base+' → HTTP '+r.status);continue;}
       const data=await r.json();
       if(!Array.isArray(data)||!data.length)throw new Error('Resposta sem velas');
-      return data.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5],closeTime:k[6]}));
-    }catch(e){clearTimeout(timerId);lastErr=e;}
+      const mapped=data.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5],closeTime:+k[6]})).filter(k=>[k.t,k.o,k.h,k.l,k.c,k.v,k.closeTime].every(Number.isFinite));
+      if(mapped.length<40)throw new Error('Poucas velas recebidas: '+mapped.length);
+      $('status').textContent='Dados recebidos • '+(base.startsWith('/api')?'proxy Vercel':'Binance');
+      return mapped;
+    }catch(e){clearTimeout(timerId);lastErr=e;errors.push(base+' → '+(e?.name==='AbortError'?'timeout':(e?.message||'erro')));}
   }
-  throw lastErr||new Error('Sem fonte de dados disponível');
+  const detail=errors.slice(0,4).join(' | ');
+  throw new Error('Nenhuma fonte de mercado respondeu. '+detail);
 }
-async function load(){const session=++lastSession; stopTimer(); $('status').textContent='A carregar '+symbolEl.value+' '+tfEl.value; try{candles=await fetchKlines(240); if(session!==lastSession)return; livePrice=candles.at(-1)?.c||null; $('status').textContent='Tempo real ativo'; renderMeta(); analyze(); schedule(); }catch(e){$('status').textContent='Erro ao carregar dados'; const n=$('nowDetail'); if(n)n.textContent='Fonte de mercado indisponível. Tenta novamente em alguns segundos.'; console.error(e);}}
+async function load(){const session=++lastSession; stopTimer(); $('status').textContent='A carregar '+symbolEl.value+' '+tfEl.value+'…'; try{candles=await fetchKlines(240); if(session!==lastSession)return; livePrice=candles.at(-1)?.c||null; $('status').textContent='Tempo real ativo'; renderMeta(); analyze(); schedule(); }catch(e){$('status').textContent='Erro ao carregar dados'; const n=$('nowDetail'); if(n)n.textContent=(e?.message||'Fonte de mercado indisponível.')+' Tenta novamente em alguns segundos.'; console.error(e);}}
 function schedule(){if(!running)return;clearInterval(timer);timer=setInterval(async()=>{if(!running)return; try{const d=await fetchKlines(240); candles=d; livePrice=candles.at(-1)?.c||null; renderMeta(); analyze(); }catch(e){console.warn('Atualização de mercado falhou',e)} },Math.max(3000,+refreshEl.value))}
 function stopTimer(){clearInterval(timer);timer=null}
 function renderMeta(){const c=candles.at(-1); if(!c)return; $('price').textContent=fmt(c.c); const p=candles.length>1?((c.c/candles.at(-2).c-1)*100):0; $('change').textContent=(p>=0?'+':'')+p.toFixed(2)+'%'; $('chartTitle').textContent=`${symbolEl.value} • ${tfEl.value} • TEMPO REAL`; $('chartMeta').textContent=`Vela ${new Date(c.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}`; $('candleTime').textContent=`Abre ${new Date(c.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`; $('ohlc').innerHTML=`<span>O <b>${fmt(c.o)}</b></span><span>H <b>${fmt(c.h)}</b></span><span>L <b>${fmt(c.l)}</b></span><span>C <b>${fmt(c.c)}</b></span><span>V <b>${fmt(c.v)}</b></span>`; const rem=Math.max(0,c.closeTime-Date.now()); $('countdown').textContent=Math.ceil(rem/1000)+'s'; }
@@ -277,6 +290,6 @@ $('runBacktest').onclick=runBacktest;
 function center(){centerOffset=0;zoom=120; if(candles.length)analyze()}
 $('start').onclick=()=>{running=true;load()};$('stop').onclick=()=>{running=false;stopTimer();$('status').textContent='Parado'};$('center').onclick=center;$('mStart').onclick=()=>{running=true;load()};$('mStop').onclick=()=>{running=false;stopTimer();$('status').textContent='Parado'};$('mCenter').onclick=center;tfEl.onchange=load;refreshEl.onchange=()=>{if(running)schedule()};window.addEventListener('resize',resize);canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(60,Math.min(220,zoom+(e.deltaY>0?20:-20)));if(candles.length)analyze()},{passive:false});
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active')}); $('saveHistory').onclick=()=>{const rec={time:new Date().toLocaleString(),asset:symbolEl.value,tf:tfEl.value,signal:$('nowSignal').textContent,next:$('nextSignal').textContent,price:$('price').textContent};const h=JSON.parse(localStorage.getItem('ta_history')||'[]');h.unshift(rec);localStorage.setItem('ta_history',JSON.stringify(h.slice(0,50)));$('saveHistory').textContent='✓ Guardado no Histórico';setTimeout(()=>$('saveHistory').textContent='↻ Salvar no Histórico',1200)}; load(); setInterval(()=>{if(candles.length) $('countdown').textContent=Math.max(0,Math.ceil((candles.at(-1).closeTime-Date.now())/1000))+'s'},250); resize();
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const regs=await navigator.serviceWorker.getRegistrations();for(const reg of regs)await reg.unregister();}catch(e){} try{const keys=await caches.keys();for(const k of keys)await caches.delete(k);}catch(e){}});}
 </script>
 </body></html>
