@@ -1,3 +1,3 @@
-const CACHE='trading-analyzer-v19';
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','./index.html','./manifest.webmanifest']))));
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(resp=>{const copy=resp.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return resp}).catch(()=>caches.match('./index.html'))))});
+// Service worker intentionally disabled in V20.2 PRO to prevent stale dashboard versions.
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',()=>self.clients.claim());
